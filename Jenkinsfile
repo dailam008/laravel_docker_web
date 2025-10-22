@@ -1,63 +1,74 @@
 pipeline {
     agent any
 
-    environment {
-        // Nama image utama (bisa dipakai kalau mau build khusus)
-        IMAGE_NAME = "laravel-app"
-        // Daftar container dari docker-compose.yml
-        CONTAINERS = "laravel_docker_web-app laravel_phpmyadmin laravel_db"
-    }
-
     stages {
         stage('Checkout Code') {
             steps {
-                echo "🔄 Checkout source code dari repo kamu..."
+                echo "🔄 Checkout source code dari repo..."
                 git branch: 'main', url: 'https://github.com/dailam008/laravel_docker_web.git'
             }
         }
 
         stage('Build Docker Images') {
             steps {
-                echo "🏗  Build Docker images menggunakan docker-compose..."
+                echo "🏗  Build Docker images..."
                 bat 'docker-compose build'
             }
         }
 
-        stage('Stop & Remove Containers Lama') {
+        stage('Cleanup Old Containers & Orphans') {
             steps {
-                echo "🛑 Hentikan dan hapus container lama jika ada..."
-                bat """
-                for %%c in (${CONTAINERS}) do (
+                echo "🧹 Stop & remove semua container lama..."
+                bat '''
+                setlocal enabledelayedexpansion
+
+                REM Stop & remove semua container dari compose
+                for /f "tokens=*" %%c in ('docker-compose ps -q') do (
                     docker stop %%c || echo "%%c tidak berjalan"
                     docker rm %%c || echo "%%c sudah dihapus"
                 )
-                """
+
+                REM Hapus container orphan
+                docker-compose down --remove-orphans
+
+                REM Hapus dangling container & image
+                docker container prune -f
+                docker image prune -f
+                endlocal
+                '''
             }
         }
 
         stage('Up Docker Compose') {
             steps {
-                echo "🚀 Jalankan ulang semua service via docker-compose..."
+                echo "🚀 Jalankan semua service via docker-compose..."
                 bat '''
-                docker-compose down || exit 0
                 docker-compose up -d
                 docker ps
                 '''
             }
         }
 
-        stage('Verify Containers') {
+        stage('Verify All Services') {
             steps {
-                echo "🔍 Verifikasi container Laravel dan phpMyAdmin..."
+                echo "🔍 Verifikasi semua service & port otomatis..."
                 bat '''
-                echo ==== TUNGGU 20 DETIK SUPAYA CONTAINER SIAP ====
+                setlocal enabledelayedexpansion
+
+                REM Tunggu container siap
                 ping 127.0.0.1 -n 20 >nul
 
-                echo ==== CEK KONEKSI LARAVEL ====
-                curl -I http://127.0.0.1:8082 || echo "⚠ Gagal akses Laravel di port 8082"
+                REM Loop semua service
+                for /f "tokens=*" %%s in ('docker-compose config --services') do (
+                    REM Ambil semua port mapping untuk service
+                    for /f "tokens=2 delims=:" %%p in ('docker-compose port %%s 80 2^>nul') do (
+                        set PORT=%%p
+                        echo ==== CEK SERVICE %%s di port !PORT! ====
+                        curl -I http://127.0.0.1:!PORT! || echo "⚠ Gagal akses %%s di port !PORT!"
+                    )
+                )
 
-                echo ==== CEK KONEKSI PHPMYADMIN ====
-                curl -I http://127.0.0.1:8081 || echo "⚠ Gagal akses phpMyAdmin di port 8081"
+                endlocal
                 '''
             }
         }
@@ -65,7 +76,7 @@ pipeline {
 
     post {
         success {
-            echo '✅ Semua container berhasil dijalankan!'
+            echo '✅ Semua container berhasil dijalankan dan verifikasi otomatis selesai!'
         }
         failure {
             echo '❌ Build gagal, cek log Jenkins console output.'
