@@ -2,87 +2,73 @@ pipeline {
     agent any
 
     environment {
-        APP_CONTAINER = "laravel_docker_web-app"
-        DB_CONTAINER = "laravel_db"
-        COMPOSER = "/usr/local/bin/composer"
-    }
-
-    triggers {
-        pollSCM('H/5 * * * *') 
+        // Nama image utama (bisa dipakai kalau mau build khusus)
+        IMAGE_NAME = "laravel-app"
+        // Daftar container dari docker-compose.yml
+        CONTAINERS = "laravel_docker_web-app laravel_phpmyadmin laravel_db"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                echo "Checkout repository dari GitHub"
+                echo "🔄 Checkout source code dari repo kamu..."
                 git branch: 'main', url: 'https://github.com/dailam008/laravel_docker_web.git'
             }
         }
 
-        stage('Check Changes') {
+        stage('Build Docker Images') {
             steps {
-                script {
-                    // Gunakan git di Windows
-                    def depChanges = bat(
-                        script: 'git diff --name-only HEAD~1 HEAD | findstr /R "composer.json composer.lock"',
-                        returnStdout: true
-                    ).trim()
-
-                    def codeChanges = bat(
-                        script: 'git diff --name-only HEAD~1 HEAD | findstr /R "app/ routes/ resources/"',
-                        returnStdout: true
-                    ).trim()
-
-                    if (depChanges == '' && codeChanges == '') {
-                        currentBuild.result = 'SUCCESS'
-                        echo "Tidak ada perubahan Laravel, pipeline dihentikan."
-                        error("Skip pipeline")
-                    }
-
-                    env.DEP_CHANGES = depChanges
-                    env.CODE_CHANGES = codeChanges
-
-                    echo "Perubahan dependency:\n${depChanges}"
-                    echo "Perubahan kode:\n${codeChanges}"
-                }
+                echo "🏗  Build Docker images menggunakan docker-compose..."
+                bat 'docker-compose build'
             }
         }
 
-        stage('Build & Install Dependencies (if needed)') {
-            when {
-                expression { env.DEP_CHANGES != '' }
-            }
+        stage('Stop & Remove Containers Lama') {
             steps {
-                echo "Dependency berubah → build image & install composer"
-                bat 'docker-compose build app'
-                bat 'docker-compose run --rm app composer install'
-            }
-        }
-
-        stage('Start/Update Containers') {
-            steps {
-                echo "Menjalankan atau memperbarui Docker Compose"
-                bat 'docker-compose up -d --remove-orphans'
+                echo "🛑 Hentikan dan hapus container lama jika ada..."
+                bat """
+                for %%c in (${CONTAINERS}) do (
+                    docker stop %%c || echo "%%c tidak berjalan"
+                    docker rm %%c || echo "%%c sudah dihapus"
+                )
+                """
             }
         }
 
-        stage('Run Laravel Tests') {
+        stage('Up Docker Compose') {
             steps {
-                echo "Menjalankan Laravel tests (jika ada)"
-                bat 'docker-compose exec app php artisan test || echo Tidak ada test tersedia'
+                echo "🚀 Jalankan ulang semua service via docker-compose..."
+                bat '''
+                docker-compose down || exit 0
+                docker-compose up -d
+                docker ps
+                '''
             }
         }
 
-        stage('Finish') {
+        stage('Verify Containers') {
             steps {
-                echo "Pipeline selesai, aplikasi sudah terdeploy!"
+                echo "🔍 Verifikasi container Laravel dan phpMyAdmin..."
+                bat '''
+                echo ==== TUNGGU 20 DETIK SUPAYA CONTAINER SIAP ====
+                ping 127.0.0.1 -n 20 >nul
+
+                echo ==== CEK KONEKSI LARAVEL ====
+                curl -I http://127.0.0.1:8082 || echo "⚠ Gagal akses Laravel di port 8082"
+
+                echo ==== CEK KONEKSI PHPMYADMIN ====
+                curl -I http://127.0.0.1:8081 || echo "⚠ Gagal akses phpMyAdmin di port 8081"
+                '''
             }
         }
     }
 
     post {
-        always {
-            echo "Pipeline selesai, siap untuk polling berikutnya"
+        success {
+            echo '✅ Semua container berhasil dijalankan!'
+        }
+        failure {
+            echo '❌ Build gagal, cek log Jenkins console output.'
         }
     }
 }
