@@ -22,13 +22,14 @@ pipeline {
         stage('Check Changes') {
             steps {
                 script {
-                    def depChanges = sh(
-                        script: "git diff --name-only HEAD~1 HEAD | grep -E 'composer.json|composer.lock' || true",
+                    // Gunakan git di Windows
+                    def depChanges = bat(
+                        script: 'git diff --name-only HEAD~1 HEAD | findstr /R "composer.json composer.lock"',
                         returnStdout: true
                     ).trim()
 
-                    def codeChanges = sh(
-                        script: "git diff --name-only HEAD~1 HEAD | grep -E 'app/|routes/|resources/' || true",
+                    def codeChanges = bat(
+                        script: 'git diff --name-only HEAD~1 HEAD | findstr /R "app/ routes/ resources/"',
                         returnStdout: true
                     ).trim()
 
@@ -53,30 +54,22 @@ pipeline {
             }
             steps {
                 echo "Dependency berubah → build image & install composer"
-                sh 'docker-compose build app'
-                sh 'docker-compose run --rm app composer install'
+                bat 'docker-compose build app'
+                bat 'docker-compose run --rm app composer install'
             }
         }
 
         stage('Start/Update Containers') {
             steps {
                 echo "Menjalankan atau memperbarui Docker Compose"
-                sh 'docker-compose up -d --remove-orphans'
-            }
-        }
-
-        stage('Set Permissions') {
-            steps {
-                echo "Set permission folder storage & bootstrap/cache"
-                sh 'docker-compose exec app chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache'
-                sh 'docker-compose exec app chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache'
+                bat 'docker-compose up -d --remove-orphans'
             }
         }
 
         stage('Run Laravel Tests') {
             steps {
                 echo "Menjalankan Laravel tests (jika ada)"
-                sh 'docker-compose exec app php artisan test || echo "Tidak ada test tersedia"'
+                bat 'docker-compose exec app php artisan test || echo Tidak ada test tersedia'
             }
         }
 
