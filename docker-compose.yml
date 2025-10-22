@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:80"
+      - "8082:80" 
     volumes:
       - ./:/var/www/html
     depends_on:
@@ -20,7 +20,7 @@ services:
       MYSQL_USER: laravel
       MYSQL_PASSWORD: secret
     ports:
-      - "3306:3306"
+      - "3307:3306" 
     volumes:
       - dbdata:/var/lib/mysql
 
