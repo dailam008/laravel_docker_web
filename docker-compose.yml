@@ -23,10 +23,6 @@ services:
       - "3307:3306" 
     volumes:
     - dbdata:/var/lib/mysql
-  healthcheck:
-    test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-    interval: 10s
-    retries: 5
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
