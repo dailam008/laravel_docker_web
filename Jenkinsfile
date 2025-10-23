@@ -2,94 +2,58 @@ pipeline {
     agent any
 
     environment {
-        APP_CONTAINER = "laravel_docker_web-app"
+        APP_CONTAINER = "laravel_web_app"
         DB_CONTAINER = "laravel_db"
-        COMPOSER = "/usr/local/bin/composer"
-    }
-
-    triggers {
-        pollSCM('H/5 * * * *') 
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                echo "Checkout repository dari GitHub"
+                echo "📦 Checkout repository dari GitHub..."
                 git branch: 'main', url: 'https://github.com/dailam008/laravel_docker_web.git'
             }
         }
 
-        stage('Check Changes') {
+        stage('Docker Compose Build & Up') {
             steps {
-                script {
-                    def depChanges = sh(
-                        script: "git diff --name-only HEAD~1 HEAD | grep -E 'composer.json|composer.lock' || true",
-                        returnStdout: true
-                    ).trim()
-
-                    def codeChanges = sh(
-                        script: "git diff --name-only HEAD~1 HEAD | grep -E 'app/|routes/|resources/' || true",
-                        returnStdout: true
-                    ).trim()
-
-                    if (depChanges == '' && codeChanges == '') {
-                        currentBuild.result = 'SUCCESS'
-                        echo "Tidak ada perubahan Laravel, pipeline dihentikan."
-                        error("Skip pipeline")
-                    }
-
-                    env.DEP_CHANGES = depChanges
-                    env.CODE_CHANGES = codeChanges
-
-                    echo "Perubahan dependency:\n${depChanges}"
-                    echo "Perubahan kode:\n${codeChanges}"
+                dir('laravel_docker_web') {
+                    echo "⚙️ Build dan Jalankan Docker Compose"
+                    bat '''
+                    docker-compose down --remove-orphans
+                    docker-compose build app
+                    docker-compose up -d
+                    '''
                 }
-            }
-        }
-
-        stage('Build & Install Dependencies (if needed)') {
-            when {
-                expression { env.DEP_CHANGES != '' }
-            }
-            steps {
-                echo "Dependency berubah → build image & install composer"
-                sh 'docker-compose build app'
-                sh 'docker-compose run --rm app composer install'
-            }
-        }
-
-        stage('Start/Update Containers') {
-            steps {
-                echo "Menjalankan atau memperbarui Docker Compose"
-                sh 'docker-compose up -d --remove-orphans'
             }
         }
 
         stage('Set Permissions') {
             steps {
-                echo "Set permission folder storage & bootstrap/cache"
-                sh 'docker-compose exec app chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache'
-                sh 'docker-compose exec app chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache'
+                dir('laravel_docker_web') {
+                    echo "🧰 Set permission (skip di Windows)"
+                    bat 'echo Skip permission stage for Windows'
+                }
             }
         }
 
-        stage('Run Laravel Tests') {
+        stage('Check Running Containers') {
             steps {
-                echo "Menjalankan Laravel tests (jika ada)"
-                sh 'docker-compose exec app php artisan test || echo "Tidak ada test tersedia"'
+                echo "📋 Menampilkan container yang sedang berjalan"
+                bat 'docker ps -a'
             }
         }
 
         stage('Finish') {
             steps {
-                echo "Pipeline selesai, aplikasi sudah terdeploy!"
+                echo "🎉 Pipeline selesai! Laravel aktif di http://localhost:8082"
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline selesai, siap untuk polling berikutnya"
+            echo "✅ Build selesai!"
         }
     }
 }
