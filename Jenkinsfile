@@ -2,88 +2,54 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "laravel-app"
+        APP_CONTAINER = "laravel_docker_web-app"
+        DB_CONTAINER = "laravel_db"
+        COMPOSER = "/usr/local/bin/composer"
+    }
+
+    triggers {
+        pollSCM('H/5 * * * *') 
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                echo "🔄 Checkout source code dari repo..."
+                echo "Checkout repository dari GitHub"
                 git branch: 'main', url: 'https://github.com/dailam008/laravel_docker_web.git'
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Docker Compose Build & Up') {
             steps {
-                echo "🏗  Build Docker images..."
-                bat 'docker-compose build'
+                dir('laravel_docker_web') { // pastikan ini nama folder repo kamu
+                    echo "Build dan Jalankan Docker Compose"
+                    sh 'docker-compose down --remove-orphans'
+                    sh 'docker-compose build'
+                    sh 'docker-compose up -d'
+                }
             }
         }
 
-        stage('Cleanup Old Containers & Orphans') {
+        stage('Set Permissions') {
             steps {
-                echo "🧹 Stop & remove semua container lama..."
-                bat '''
-                setlocal enabledelayedexpansion
-
-                REM Stop & remove semua container dari docker-compose
-                for /f "tokens=*" %%c in ('docker-compose ps -q') do (
-                    docker stop %%c || echo "%%c tidak berjalan"
-                    docker rm %%c || echo "%%c sudah dihapus"
-                )
-
-                REM Hapus container orphan dan network lama
-                docker-compose down --remove-orphans
-
-                REM Bersihkan dangling container & image
-                docker container prune -f
-                docker image prune -f
-
-                endlocal
-                '''
+                dir('laravel_docker_web') {
+                    echo "Set permission folder storage & cache"
+                    sh 'docker-compose exec app chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache || true'
+                }
             }
         }
 
-        stage('Up Docker Compose') {
+        stage('Check Running Containers') {
             steps {
-                echo "🚀 Jalankan semua service via docker-compose..."
-                bat '''
-                REM Build ulang & jalankan semua service
-                docker-compose up -d --build
-                docker ps
-                '''
+                echo "Cek container yang berjalan"
+                sh 'docker ps -a'
             }
         }
 
-        stage('Verify Laravel & phpMyAdmin') {
+        stage('Finish') {
             steps {
-                echo "🔍 Verifikasi service Laravel & phpMyAdmin..."
-                bat '''
-                setlocal enabledelayedexpansion
-
-                REM Tunggu container siap
-                ping 127.0.0.1 -n 20 >nul
-
-                REM Cek Laravel app di port 8082
-                echo ==== CEK LARAVEL ====
-                curl -I http://127.0.0.1:8082 || echo "⚠ Laravel gagal diakses"
-
-                REM Cek phpMyAdmin di port 8081
-                echo ==== CEK PHPMYADMIN ====
-                curl -I http://127.0.0.1:8081 || echo "⚠ phpMyAdmin gagal diakses"
-
-                endlocal
-                '''
+                echo "Deployment selesai! Laravel web harusnya sudah aktif di http://localhost:8082"
             }
-        }
-    }
-
-    post {
-        success {
-            echo '✅ Semua container berhasil dijalankan, Laravel bisa konek ke DB, dan tidak ada duplikat!'
-        }
-        failure {
-            echo '❌ Build gagal, cek log Jenkins console output.'
         }
     }
 }
