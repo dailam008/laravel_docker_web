@@ -1,59 +1,60 @@
 pipeline {
     agent any
 
-    environment {
-        APP_CONTAINER = "laravel_web_app"
-        DB_CONTAINER = "laravel_db"
-    }
-
     stages {
-
-        stage('Checkout') {
+        stage('Clone Repository') {
             steps {
-                echo "📦 Checkout repository dari GitHub..."
-                git branch: 'main', url: 'https://github.com/dailam008/laravel_docker_web.git'
+                // Clone project dari GitHub
+                git branch: 'main', url: 'https://github.com/dailamlaravel/laravel_docker_web.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                // Build image Laravel
+                bat 'docker build -t laravel_app .'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                // Jalankan composer install di dalam container sementara
+                bat 'docker run --rm -v %cd%:/app composer install'
             }
         }
 
         stage('Docker Compose Build & Up') {
             steps {
-                dir('laravel_docker_web') {
-                    echo "⚙️ Build dan Jalankan Docker Compose"
-                    bat '''
-                    docker-compose down --remove-orphans
-                    docker-compose build app
-                    docker-compose up -d
-                    '''
-                }
-            }
-        }
+                // Bersihkan container lama agar tidak bentrok
+                bat 'docker rm -f laravel_db || echo "No old laravel_db container to remove"'
+                bat 'docker rm -f laravel_phpmyadmin || echo "No old phpmyadmin container to remove"'
+                bat 'docker rm -f laravel_app || echo "No old laravel_app container to remove"'
 
-        stage('Set Permissions') {
-            steps {
-                dir('laravel_docker_web') {
-                    echo "🧰 Set permission (skip di Windows)"
-                    bat 'echo Skip permission stage for Windows'
-                }
+                // Bersihkan jaringan & container yatim piatu
+                bat 'docker-compose down --remove-orphans'
+
+                // Build ulang service Laravel
+                bat 'docker-compose build app'
+
+                // Jalankan semua container (app, db, phpmyadmin)
+                bat 'docker-compose up -d'
             }
         }
 
         stage('Check Running Containers') {
             steps {
-                echo "📋 Menampilkan container yang sedang berjalan"
-                bat 'docker ps -a'
-            }
-        }
-
-        stage('Finish') {
-            steps {
-                echo "🎉 Pipeline selesai! Laravel aktif di http://localhost:8082"
+                // Pastikan semua container jalan
+                bat 'docker ps'
             }
         }
     }
 
     post {
-        always {
-            echo "✅ Build selesai!"
+        success {
+            echo '✅ Build dan deployment berhasil! Laravel app sudah berjalan di http://localhost:8082'
+        }
+        failure {
+            echo '❌ Build gagal. Cek log Jenkins untuk detail error.'
         }
     }
 }
