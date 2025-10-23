@@ -5,7 +5,7 @@ pipeline {
         stage('Clone Repository') {
             steps {
                 // Clone project dari GitHub
-                git branch: 'main', url: 'https://github.com/dailamlaravel/laravel_docker_web.git'
+                git branch: 'main', url: 'https://github.com/dailam008/laravel_docker_web.git'
             }
         }
 
